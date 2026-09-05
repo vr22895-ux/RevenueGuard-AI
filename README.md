@@ -2,7 +2,7 @@
 
 **Razorpay AI Buildathon 2026 - Track 03: Autonomous FinTech Agent**
 
-🔗 **[Live Demo on Vercel](#)** *(Replace this with your deployed Vercel link!)*
+🔗 **[Live Demo on Vercel](https://revenueguard-ai-bay.vercel.app/dashboard)** *(Replace this with your deployed Vercel link!)*
 
 RevenueGuard AI is an automated, AI-powered payment recovery orchestrator designed to intelligently salvage failed payments while strictly adhering to financial compliance and safety guardrails.
 
