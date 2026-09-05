@@ -74,7 +74,7 @@ const FAILURE_REASONS = [
     error_reason: 'upi_timeout',
   },
   {
-    weight: 5,
+    weight: 20,
     root_cause: 'mandate_revoked',
     error_code: 'BAD_REQUEST_ERROR',
     error_description: 'The mandate/auto-debit permission has been revoked by the customer. Cannot process recurring payment.',
