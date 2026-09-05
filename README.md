@@ -16,26 +16,31 @@ RevenueGuard AI sits perfectly between the payment gateway and the customer. It 
 
 ```mermaid
 graph TD
-    A[Razorpay Webhook: Payment Failed] --> B[Ingestion & Batching]
+    A[Batch of Synthetic Failed Payments] --> B[Ingestion & Batching]
     B --> C{Gemini AI Engine}
     C -->|Analyze Error Code| D[Root Cause Classification]
     D --> E{Deterministic Rule Engine}
     E -->|If eMandate Revoked| F[Escalate to Human]
     E -->|If Soft Decline| G[Silent Background Retry]
     E -->|If Insufficient Funds| H[Generate Payment Link & AI Draft SMS]
-    
-    %% Audit Trail layer
+    H --> P[Promise-to-Pay Tracker]
+    G --> S{Stopping Rule: attempts>=3 or hard decline?}
+    S -->|No| E
+    S -->|Yes| F
+    P --> S
+
     I[(Immutable Postgres Audit Ledger)]
     C -.->|Logs Classification| I
     E -.->|Logs Decision| I
     F -.->|Logs Action| I
     G -.->|Logs Action| I
     H -.->|Logs Action| I
-    
+    I --> M[Dashboard: Batch Recovery Metrics]
+
     classDef default fill:#ffffff,stroke:#e5e5e5,stroke-width:1px,color:#171717;
     classDef ai fill:#eff6ff,stroke:#2563eb,stroke-width:2px,color:#171717;
     classDef db fill:#ecfdf5,stroke:#059669,stroke-width:2px,color:#171717;
-    
+
     class C,D ai;
     class I db;
 ```
