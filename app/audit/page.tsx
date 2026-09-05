@@ -73,8 +73,8 @@ export default function AuditPage() {
   return (
     <div className="page-container">
       <div className="page-header">
-        <h1>📋 Audit Trail</h1>
-        <p>Immutable, append-only log of every decision and action. Written BEFORE execution (write-ahead pattern).</p>
+        <h1>Audit Trail</h1>
+        <p>Immutable, append-only log of every AI decision and action · Write-ahead pattern</p>
       </div>
 
       {/* Filters */}
@@ -99,7 +99,7 @@ export default function AuditPage() {
       {loading ? (
         <div className="card"><div className="empty-state"><span className="spinner" /><p className="mt-md">Loading audit trail...</p></div></div>
       ) : entries.length === 0 ? (
-        <div className="card"><div className="empty-state"><div className="empty-state-icon">📋</div><h3>No Audit Entries</h3><p>Run the Recovery Agent to generate audit trail entries.</p></div></div>
+        <div className="card"><div className="empty-state"><h3>No Audit Entries</h3><p>Run the Recovery Agent to generate audit trail entries.</p></div></div>
       ) : (
         <div className="card" style={{ padding: 'var(--space-lg)' }}>
           <div className="timeline">

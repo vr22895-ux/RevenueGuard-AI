@@ -149,13 +149,14 @@ Be calibrated with your confidence score:
 // 2. Recovery Message Drafting
 // ============================================================
 
-interface MessageDraftInput {
+export interface MessageDraftInput {
   customer_name: string;
   amount: number; // paise
   root_cause: string;
   attempt_number: number;
   method: string;
   is_recurring: boolean;
+  has_payment_link?: boolean;
 }
 
 export async function draftRecoveryMessage(
@@ -174,6 +175,10 @@ export async function draftRecoveryMessage(
         ? 'Be concerned and solution-oriented. Offer clear alternatives. This is a follow-up.'
         : 'Be respectful but convey urgency. This is a final notice before escalation.';
 
+  const linkInstruction = input.has_payment_link
+    ? 'Reference the payment link using the exact token "[Payment Link]" where the URL should appear.'
+    : 'Do NOT mention any payment link or URL. Ask the customer to reply or confirm payment details.';
+
   const prompt = `You are writing a recovery message for a failed payment on behalf of a business using Razorpay.
 
 CONTEXT:
@@ -190,10 +195,9 @@ RULES:
 1. Keep it under 150 words
 2. Never mention the exact technical error code
 3. Use soft language for the failure reason (e.g., "payment couldn't be processed" instead of "card declined")
-4. Include a clear call-to-action (e.g., "click the payment link below" or "update your payment method")
-5. If it's a subscription, mention the service/subscription context
-6. Do NOT include placeholder links — just reference "the payment link below"
-7. Sign off professionally
+4. Include a clear call-to-action
+5. ${linkInstruction}
+6. Sign off professionally
 
 Write the message as a complete email/SMS body, ready to send.`;
 

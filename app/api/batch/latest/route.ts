@@ -61,6 +61,11 @@ export async function GET() {
         });
       }
 
+      const totalRecords = txData ? txData.length : 0;
+      const totalProcessed = txData ? txData.filter((tx: any) => tx.status !== 'unprocessed').length : 0;
+
+      batch.total_records = totalRecords;
+      batch.processed = totalProcessed;
       batch.total_at_risk = totalAtRisk;
       batch.auto_retry_count = autoRetryCount;
       batch.message_count = messageCount;
@@ -69,7 +74,7 @@ export async function GET() {
       batch.escalated_count = escalatedCount;
       batch.recovered_count = recoveredCount;
       batch.recovered_amount = recoveredAmount;
-      batch.recovery_rate = batch.processed > 0 ? recoveredCount / batch.processed : 0;
+      batch.recovery_rate = totalRecords > 0 ? recoveredCount / totalRecords : 0;
       batch.batch_id = batch.id;
     }
 

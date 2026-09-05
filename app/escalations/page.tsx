@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import Link from 'next/link';
 
 interface Escalation {
   id: string;
@@ -25,13 +26,13 @@ interface Escalation {
 }
 
 const REASON_LABELS: Record<string, string> = {
-  max_retries: '🔄 Max Retries Exceeded',
-  hard_decline: '🚫 Hard Decline',
-  high_value: '💎 High Value',
-  low_confidence: '🤔 Low AI Confidence',
-  promise_broken: '💔 Promise Broken',
-  customer_declined: '✋ Customer Declined',
-  manual: '👤 Manual Review',
+  max_retries: 'Max Retries Exceeded',
+  hard_decline: 'Hard Decline',
+  high_value: 'High Value',
+  low_confidence: 'Low AI Confidence',
+  promise_broken: 'Promise Broken',
+  customer_declined: 'Customer Declined',
+  manual: 'Manual Review',
 };
 
 export default function EscalationsPage() {
@@ -65,7 +66,7 @@ export default function EscalationsPage() {
       body: JSON.stringify({
         id,
         status,
-        resolution: status === 'resolved' ? 'Manually reviewed and resolved' : 'Dismissed — no action needed',
+        resolution: status === 'resolved' ? 'Manually reviewed and resolved' : 'Dismissed: no action needed',
       }),
     });
     fetchEscalations();
@@ -84,8 +85,8 @@ export default function EscalationsPage() {
   return (
     <div className="page-container">
       <div className="page-header">
-        <h1>🚨 Escalation Queue</h1>
-        <p>Payments that hit stopping rules or need human review. {pendingCount} pending.</p>
+        <h1>Escalation Queue</h1>
+        <p>Payments that hit stopping rules or need human review · {pendingCount} pending</p>
       </div>
 
       <div className="flex gap-sm mb-lg">
@@ -99,7 +100,7 @@ export default function EscalationsPage() {
       {loading ? (
         <div className="card"><div className="empty-state"><span className="spinner" /><p className="mt-md">Loading...</p></div></div>
       ) : filtered.length === 0 ? (
-        <div className="card"><div className="empty-state"><div className="empty-state-icon">✅</div><h3>No Escalations</h3><p>All clear! No payments need human review.</p></div></div>
+        <div className="card"><div className="empty-state"><h3>No Escalations</h3><p>All clear! No payments need human review.</p></div></div>
       ) : (
         <div className="flex flex-col gap-md">
           {filtered.map(esc => (
@@ -116,16 +117,23 @@ export default function EscalationsPage() {
                     {REASON_LABELS[esc.reason] || esc.reason}
                   </span>
                 </div>
-                {esc.status === 'pending' && (
-                  <div className="flex gap-sm">
-                    <button className="btn btn--success btn--sm" onClick={() => handleResolve(esc.id, 'resolved')}>
-                      ✅ Resolve
-                    </button>
-                    <button className="btn btn--ghost btn--sm" onClick={() => handleResolve(esc.id, 'dismissed')}>
-                      ✕ Dismiss
-                    </button>
-                  </div>
-                )}
+                <div className="flex gap-sm items-center">
+                  {esc.status === 'pending' && (
+                    <>
+                      <button className="btn btn--success btn--sm" onClick={() => handleResolve(esc.id, 'resolved')}>
+                        Resolve
+                      </button>
+                      <button className="btn btn--ghost btn--sm" onClick={() => handleResolve(esc.id, 'dismissed')}>
+                        ✕ Dismiss
+                      </button>
+                    </>
+                  )}
+                  {esc.transaction_id && (
+                    <Link href={`/payments/${esc.transaction_id}`} className="btn btn--ghost btn--sm">
+                      View Details →
+                    </Link>
+                  )}
+                </div>
               </div>
 
               {esc.transactions && (

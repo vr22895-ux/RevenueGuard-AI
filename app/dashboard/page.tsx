@@ -110,7 +110,7 @@ export default function DashboardPage() {
       const res = await fetch('/api/seed', { method: 'POST' });
       const data = await res.json();
       if (data.success) {
-        setSeedResult(`✅ Generated fresh batch of ${data.count} records (Batch: ${data.batch_id?.slice(0, 8)}...)`);
+        setSeedResult(`Generated fresh batch of ${data.count} records (Batch: ${data.batch_id?.slice(0, 8)}...)`);
         setCurrentPage(1);
         setStatusFilter('all');
         
@@ -161,35 +161,70 @@ export default function DashboardPage() {
 
   const totalPages = Math.ceil(totalCount / limit);
 
+  const [runningStep, setRunningStep] = useState(0);
+
+  const STEP_MESSAGES = [
+    ' Ingesting failed payments & verifying signatures...',
+    ' Classifying root causes...',
+    ' Evaluating deterministic decision matrix & stopping rules...',
+    ' Executing retries, payment links & recovery messages...',
+    ' Writing write-ahead audit logs & updating live metrics...'
+  ];
+
+  useEffect(() => {
+    if (!isRunning) {
+      setRunningStep(0);
+      return;
+    }
+    const interval = setInterval(() => {
+      setRunningStep((prev) => (prev + 1) % STEP_MESSAGES.length);
+    }, 3000);
+    return () => clearInterval(interval);
+  }, [isRunning, STEP_MESSAGES.length]);
+
   return (
     <div className="page-container">
       <div className="page-header">
-        <h1>🛡️ RevenueGuard AI</h1>
-        <p>AI-powered revenue recovery with deterministic decision engine &amp; full audit trail</p>
+        <h1>Dashboard</h1>
+        <p className="text-sm text-muted" style={{ marginTop: '4px' }}>
+          Real-time AI recovery metrics, root cause breakdowns, and execution control
+        </p>
       </div>
 
       {/* ── Control Panel ── */}
       <div className="card mb-lg">
-        <div className="card-header">
-          <span className="card-title">⚡ Control Panel</span>
-          <span className="text-xs text-muted">
-            Pipeline: Classify (AI) → Decide (Rules) → Execute → Audit → Stop Check
-          </span>
+        <div className="card-header flex items-center justify-between" style={{ flexWrap: 'wrap', gap: '0.5rem' }}>
+          <span className="card-title">Control Panel</span>
+          <div className="pipeline-flow">
+            <span className="pipeline-label">Agent Flow:</span>
+            <span className={`pipeline-step ${isRunning && runningStep === 1 ? 'pipeline-step--active' : ''}`}>Classify</span>
+            <span className="pipeline-arrow">→</span>
+            <span className={`pipeline-step ${isRunning && runningStep === 2 ? 'pipeline-step--active' : ''}`}>Decide</span>
+            <span className="pipeline-arrow">→</span>
+            <span className={`pipeline-step ${isRunning && runningStep === 3 ? 'pipeline-step--active' : ''}`}>Execute</span>
+            <span className="pipeline-arrow">→</span>
+            <span className={`pipeline-step ${isRunning && runningStep === 4 ? 'pipeline-step--active' : ''}`}>Audit</span>
+            <span className="pipeline-arrow">→</span>
+            <span className={`pipeline-step ${isRunning && runningStep === 0 ? 'pipeline-step--active' : ''}`}>Stop Check</span>
+          </div>
         </div>
         <div className="flex gap-md items-center" style={{ flexWrap: 'wrap' }}>
-          <button className="btn btn--primary" onClick={handleSeedData} disabled={isSeeding || isRunning}>
-            {isSeeding ? <><span className="spinner" /> Generating...</> : '📊 Generate 12 Failed Payments'}
+          <button className="btn btn--ghost" onClick={handleSeedData} disabled={isSeeding || isRunning}>
+            {isSeeding ? <><span className="spinner" /> Generating...</> : 'Generate Test Payments'}
           </button>
-          <button className="btn btn--success btn--lg" onClick={handleRunBatch} disabled={isRunning || transactions.length === 0}>
-            {isRunning ? <><span className="spinner" /> Running Agent...</> : '🚀 Run Recovery Agent'}
+          <button className="btn btn--primary" onClick={handleRunBatch} disabled={isRunning || transactions.length === 0}>
+            {isRunning ? <><span className="spinner" /> Processing Agent...</> : 'Run Recovery Agent'}
           </button>
         </div>
         {seedResult && <p className="mt-sm text-sm text-success">{seedResult}</p>}
-        {error && <p className="mt-sm text-sm text-danger">❌ {error}</p>}
+        {error && <p className="mt-sm text-sm text-danger">{error}</p>}
         {isRunning && (
-          <p className="mt-sm text-sm text-warning pulse">
-            ⏳ Processing payments through AI classification + deterministic decision engine... This takes 2-4 minutes.
-          </p>
+          <div className="mt-md p-sm" style={{ background: 'rgba(129, 140, 248, 0.08)', borderRadius: 'var(--radius-sm)', border: '1px solid rgba(129, 140, 248, 0.15)' }}>
+            <p className="text-sm font-medium pulse" style={{ color: '#a5b4fc', display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <span className="spinner" style={{ width: '14px', height: '14px', borderTopColor: '#a5b4fc' }} />
+              {STEP_MESSAGES[runningStep]}
+            </p>
+          </div>
         )}
       </div>
 
@@ -198,23 +233,23 @@ export default function DashboardPage() {
         <>
           <div className="grid grid-4 mb-lg">
             <div className="card metric-card metric-card--info">
-              <span className="card-title">💰 Revenue at Risk</span>
-              <div className="card-value text-info">{formatAmount(metrics.total_at_risk)}</div>
+              <span className="card-title">Revenue at Risk</span>
+              <div className="card-value">{formatAmount(metrics.total_at_risk)}</div>
               <span className="text-xs text-muted">{metrics.total_records} failed payments</span>
             </div>
             <div className="card metric-card metric-card--success">
-              <span className="card-title">✅ Recovered</span>
-              <div className="card-value text-success">{formatAmount(metrics.recovered_amount)}</div>
+              <span className="card-title">Recovered</span>
+              <div className="card-value">{formatAmount(metrics.recovered_amount)}</div>
               <span className="text-xs text-muted">{metrics.recovered_count} payments</span>
             </div>
             <div className="card metric-card metric-card--warning">
-              <span className="card-title">📈 Recovery Rate</span>
-              <div className="card-value text-warning">{(metrics.recovery_rate * 100).toFixed(1)}%</div>
-              <span className="text-xs text-muted">{metrics.recovered_count} recovered of {metrics.processed} processed</span>
+              <span className="card-title">Recovery Rate</span>
+              <div className="card-value">{(metrics.recovery_rate * 100).toFixed(1)}%</div>
+              <span className="text-xs text-muted">{metrics.recovered_count} of {metrics.processed} processed</span>
             </div>
             <div className="card metric-card metric-card--danger">
-              <span className="card-title">🚨 Escalated</span>
-              <div className="card-value text-danger">{metrics.escalated_count}</div>
+              <span className="card-title">Escalated</span>
+              <div className="card-value">{metrics.escalated_count}</div>
               <span className="text-xs text-muted">Sent to human queue</span>
             </div>
           </div>
@@ -222,7 +257,7 @@ export default function DashboardPage() {
           <div className="grid grid-2 mb-lg">
             {/* AI Root Cause Breakdown */}
             <div className="card">
-               <span className="card-title mb-sm block">🧠 AI Root Cause Breakdown</span>
+               <span className="card-title mb-sm" style={{ display: 'block' }}>AI Root Cause Breakdown</span>
                <div className="flex flex-col gap-sm mt-md">
                  {Object.entries(rootCauses).length > 0 ? (
                    Object.entries(rootCauses)
@@ -234,12 +269,13 @@ export default function DashboardPage() {
                            <span>{cause.replace(/_/g, ' ')}</span>
                            <span className="text-mono">{count}</span>
                          </div>
-                         <div style={{ width: '100%', height: '8px', background: 'var(--bg-primary)', borderRadius: '4px' }}>
+                         <div style={{ width: '100%', height: '4px', background: 'var(--bg-tertiary)', borderRadius: '2px' }}>
                            <div style={{ 
                              width: `${Math.min(100, (count / metrics.processed) * 100)}%`, 
                              height: '100%', 
                              background: 'var(--color-info)',
-                             borderRadius: '4px'
+                             borderRadius: '2px',
+                             opacity: '0.7'
                            }} />
                          </div>
                        </div>
@@ -252,28 +288,28 @@ export default function DashboardPage() {
 
             {/* Recovery Funnel */}
             <div className="card">
-               <span className="card-title mb-sm block">📊 Recovery Funnel</span>
+               <span className="card-title mb-sm" style={{ display: 'block' }}>Recovery Funnel</span>
                <div className="flex flex-col gap-md mt-md">
                  <div>
                    <div className="flex justify-between text-sm mb-xs">
                      <span>Total At Risk</span>
                      <span className="text-mono">{metrics.total_records}</span>
                    </div>
-                   <div style={{ width: '100%', height: '16px', background: 'var(--color-muted)', borderRadius: '4px' }} />
+                   <div style={{ width: '100%', height: '6px', background: 'var(--bg-tertiary)', borderRadius: '3px' }} />
                  </div>
                  <div>
                    <div className="flex justify-between text-sm mb-xs">
                      <span>Processed by Agent</span>
                      <span className="text-mono">{metrics.processed}</span>
                    </div>
-                   <div style={{ width: `${(metrics.processed / Math.max(1, metrics.total_records)) * 100}%`, height: '16px', background: 'var(--color-primary)', borderRadius: '4px', transition: 'width 0.5s' }} />
+                   <div style={{ width: `${(metrics.processed / Math.max(1, metrics.total_records)) * 100}%`, height: '6px', background: 'var(--color-info)', borderRadius: '3px', transition: 'width 0.5s', opacity: '0.7' }} />
                  </div>
                  <div>
                    <div className="flex justify-between text-sm mb-xs">
                      <span>Successfully Recovered</span>
                      <span className="text-mono">{metrics.recovered_count}</span>
                    </div>
-                   <div style={{ width: `${(metrics.recovered_count / Math.max(1, metrics.total_records)) * 100}%`, height: '16px', background: 'var(--color-success)', borderRadius: '4px', transition: 'width 0.5s' }} />
+                   <div style={{ width: `${(metrics.recovered_count / Math.max(1, metrics.total_records)) * 100}%`, height: '6px', background: 'var(--color-success)', borderRadius: '3px', transition: 'width 0.5s', opacity: '0.7' }} />
                  </div>
                </div>
             </div>
@@ -281,19 +317,19 @@ export default function DashboardPage() {
 
           <div className="grid grid-4 mb-lg">
             <div className="card">
-              <span className="card-title">🔄 Auto-Retries</span>
+              <span className="card-title">Auto-Retries</span>
               <div className="card-value">{metrics.auto_retry_count}</div>
             </div>
             <div className="card">
-              <span className="card-title">✉️ AI Messages</span>
+              <span className="card-title">AI Messages</span>
               <div className="card-value">{metrics.message_count}</div>
             </div>
             <div className="card">
-              <span className="card-title">🔗 Payment Links</span>
+              <span className="card-title">Payment Links</span>
               <div className="card-value">{metrics.payment_link_count}</div>
             </div>
             <div className="card">
-              <span className="card-title">🤝 Promises</span>
+              <span className="card-title">Promises</span>
               <div className="card-value">{metrics.promise_count}</div>
             </div>
           </div>
@@ -391,9 +427,9 @@ export default function DashboardPage() {
       {transactions.length === 0 && !metrics && (
         <div className="card">
           <div className="empty-state">
-            <div className="empty-state-icon">🛡️</div>
+            <div className="empty-state-icon">↗</div>
             <h3>Ready to Recover Revenue</h3>
-            <p>Click &quot;Generate 200 Failed Payments&quot; to seed synthetic data, then run the Recovery Agent.</p>
+            <p>Generate test payments to seed synthetic data, then run the Recovery Agent.</p>
           </div>
         </div>
       )}

@@ -2,6 +2,8 @@
 
 **Razorpay AI Buildathon 2026 - Track 03: Autonomous FinTech Agent**
 
+🔗 **[Live Demo on Vercel](#)** *(Replace this with your deployed Vercel link!)*
+
 RevenueGuard AI is an automated, AI-powered payment recovery orchestrator designed to intelligently salvage failed payments while strictly adhering to financial compliance and safety guardrails.
 
 ## 🚀 The Problem
@@ -9,6 +11,34 @@ When a payment fails (due to insufficient funds, network timeouts, or expired ca
 
 ## 💡 Our Solution
 RevenueGuard AI sits perfectly between the payment gateway and the customer. It automatically ingests failed transactions, analyzes them using Google Gemini, and executes intelligent recovery strategies—all while maintaining a 100% immutable audit trail.
+
+### System Architecture Flow
+
+```mermaid
+graph TD
+    A[Razorpay Webhook: Payment Failed] --> B[Ingestion & Batching]
+    B --> C{Gemini AI Engine}
+    C -->|Analyze Error Code| D[Root Cause Classification]
+    D --> E{Deterministic Rule Engine}
+    E -->|If eMandate Revoked| F[Escalate to Human]
+    E -->|If Soft Decline| G[Silent Background Retry]
+    E -->|If Insufficient Funds| H[Generate Payment Link & AI Draft SMS]
+    
+    %% Audit Trail layer
+    I[(Immutable Postgres Audit Ledger)]
+    C -.->|Logs Classification| I
+    E -.->|Logs Decision| I
+    F -.->|Logs Action| I
+    G -.->|Logs Action| I
+    H -.->|Logs Action| I
+    
+    classDef default fill:#ffffff,stroke:#e5e5e5,stroke-width:1px,color:#171717;
+    classDef ai fill:#eff6ff,stroke:#2563eb,stroke-width:2px,color:#171717;
+    classDef db fill:#ecfdf5,stroke:#059669,stroke-width:2px,color:#171717;
+    
+    class C,D ai;
+    class I db;
+```
 
 ### Key Architectural Pillars
 1. **Separation of Brain and Muscle**: To prevent AI hallucinations in financial transactions, the system is split into two layers:

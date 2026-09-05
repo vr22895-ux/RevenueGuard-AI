@@ -4,9 +4,9 @@ import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 
 const NAV_ITEMS = [
-  { href: '/dashboard', label: 'Dashboard', icon: '📊' },
-  { href: '/audit', label: 'Audit Trail', icon: '📋' },
-  { href: '/escalations', label: 'Escalations', icon: '🚨' },
+  { href: '/dashboard', label: 'Dashboard' },
+  { href: '/audit', label: 'Audit Trail' },
+  { href: '/escalations', label: 'Escalations' },
 ];
 
 export default function Navbar() {
@@ -15,8 +15,11 @@ export default function Navbar() {
   return (
     <nav className="navbar">
       <Link href="/dashboard" className="navbar-brand">
-        <span className="navbar-brand-icon">🛡️</span>
-        RevenueGuard AI
+        <span className="navbar-brand-icon">R</span>
+        <div className="navbar-brand-text">
+          <span className="navbar-brand-title">RevenueGuard</span>
+          <span className="navbar-brand-tagline">AI-powered revenue recovery with deterministic rules and full audit trail</span>
+        </div>
       </Link>
       <div className="navbar-links">
         {NAV_ITEMS.map((item) => (
@@ -25,7 +28,7 @@ export default function Navbar() {
             href={item.href}
             className={`navbar-link ${pathname === item.href ? 'navbar-link--active' : ''}`}
           >
-            <span>{item.icon}</span> {item.label}
+            {item.label}
           </Link>
         ))}
       </div>

@@ -83,12 +83,14 @@ export function makeDecision(input: DecisionInput): DecisionResult {
   // ──────────────────────────────────────────────────────
   // RULE 00: HARD DECLINE — always first, always checked
   // ──────────────────────────────────────────────────────
+  // RULE 00: HARD DECLINE — always first, always checked
+  // ──────────────────────────────────────────────────────
   if (HARD_DECLINE_CAUSES.includes(input.root_cause)) {
     return {
       action_type: 'stop',
       rule_matched: 'RULE_00_HARD_DECLINE',
       rule_inputs: ruleInputs,
-      decision_reason: `Hard decline: ${input.root_cause.replace(/_/g, ' ')}. Do not retry — escalating to human queue.`,
+      decision_reason: `Hard decline: ${input.root_cause.replace(/_/g, ' ')}. Do not retry: escalating to human queue.`,
     };
   }
 
@@ -102,7 +104,7 @@ export function makeDecision(input: DecisionInput): DecisionResult {
       action_type: 'escalate_human',
       rule_matched: 'RULE_99_LOW_CONFIDENCE',
       rule_inputs: ruleInputs,
-      decision_reason: `AI classification confidence is ${(input.confidence * 100).toFixed(1)}% — below 50% threshold. Escalating to human for manual review.`,
+      decision_reason: `AI classification confidence is ${(input.confidence * 100).toFixed(1)}% (below 50% threshold). Escalating to human for manual review.`,
     };
   }
 
@@ -131,7 +133,7 @@ export function makeDecision(input: DecisionInput): DecisionResult {
         action_type: 'auto_retry',
         rule_matched: `RULE_01_TRANSIENT_RETRY`,
         rule_inputs: ruleInputs,
-        decision_reason: `Transient error (${input.root_cause.replace(/_/g, ' ')}). Auto-retrying — attempt ${input.attempt_count + 1} of ${MAX_ATTEMPTS}. These errors are typically resolved by the issuing bank within minutes.`,
+        decision_reason: `Transient error (${input.root_cause.replace(/_/g, ' ')}). Auto-retrying (attempt ${input.attempt_count + 1} of ${MAX_ATTEMPTS}). These errors are typically resolved by the issuing bank within minutes.`,
       };
 
     // ── INSUFFICIENT FUNDS ──
@@ -142,7 +144,7 @@ export function makeDecision(input: DecisionInput): DecisionResult {
             action_type: 'auto_retry',
             rule_matched: 'RULE_02_INSUF_SMALL_RETRY',
             rule_inputs: ruleInputs,
-            decision_reason: `Insufficient funds for ${amountBand} amount (₹${(input.amount / 100).toFixed(2)}). Auto-retrying with delay — customer may have funds available after payday cycle.`,
+            decision_reason: `Insufficient funds for ${amountBand} amount (₹${(input.amount / 100).toFixed(2)}). Auto-retrying with delay: customer may have funds available after payday cycle.`,
           };
         }
         return {
@@ -157,7 +159,7 @@ export function makeDecision(input: DecisionInput): DecisionResult {
           action_type: 'promise_to_pay',
           rule_matched: 'RULE_03_INSUF_MEDIUM_PTP',
           rule_inputs: ruleInputs,
-          decision_reason: `Insufficient funds for ${amountBand} amount (₹${(input.amount / 100).toFixed(2)}). Creating promise-to-pay with recovery message — higher amounts benefit from structured commitment.`,
+          decision_reason: `Insufficient funds for ${amountBand} amount (₹${(input.amount / 100).toFixed(2)}). Creating promise-to-pay with recovery message: higher amounts benefit from structured commitment.`,
         };
       }
       // high_value
@@ -165,16 +167,24 @@ export function makeDecision(input: DecisionInput): DecisionResult {
         action_type: 'escalate_human',
         rule_matched: 'RULE_03_INSUF_HIGH_ESCALATE',
         rule_inputs: ruleInputs,
-        decision_reason: `Insufficient funds for high-value amount (₹${(input.amount / 100).toFixed(2)}). Escalating to human — amounts above ₹50,000 require manual review.`,
+        decision_reason: `Insufficient funds for high-value amount (₹${(input.amount / 100).toFixed(2)}). Escalating to human: amounts above ₹50,000 require manual review.`,
       };
 
     // ── EXPIRED CARD ──
     case 'card_expired':
+      if (input.attempt_count >= 1) {
+        return {
+          action_type: 'stop',
+          rule_matched: 'RULE_04_EXPIRED_CARD_STOP',
+          rule_inputs: ruleInputs,
+          decision_reason: `Card expired: customer has already been notified. Escalating to human queue to prevent duplicate notifications.`,
+        };
+      }
       return {
         action_type: 'recovery_message',
         rule_matched: 'RULE_04_EXPIRED_CARD',
         rule_inputs: ruleInputs,
-        decision_reason: `Card expired — cannot retry with same card. Sending recovery message asking customer to update payment method, with a fresh payment link.`,
+        decision_reason: `Card expired: cannot retry with same card. Sending recovery message asking customer to update payment method with a fresh payment link.`,
       };
 
     // ── CARD DECLINED (GENERIC) ──
@@ -184,7 +194,7 @@ export function makeDecision(input: DecisionInput): DecisionResult {
           action_type: 'auto_retry',
           rule_matched: 'RULE_05_DECLINED_RETRY',
           rule_inputs: ruleInputs,
-          decision_reason: `Card declined for ${amountBand} amount with high classification confidence (${(input.confidence * 100).toFixed(1)}%). Auto-retrying — generic declines are sometimes transient.`,
+          decision_reason: `Card declined for ${amountBand} amount with high classification confidence (${(input.confidence * 100).toFixed(1)}%). Auto-retrying: generic declines are sometimes transient.`,
         };
       }
       if (amountBand === 'high_value') {
@@ -192,14 +202,14 @@ export function makeDecision(input: DecisionInput): DecisionResult {
           action_type: 'escalate_human',
           rule_matched: 'RULE_05_DECLINED_ESCALATE',
           rule_inputs: ruleInputs,
-          decision_reason: `Card declined for high-value amount (₹${(input.amount / 100).toFixed(2)}). Escalating to human — high-value declines need careful handling.`,
+          decision_reason: `Card declined for high-value amount (₹${(input.amount / 100).toFixed(2)}). Escalating to human: high-value declines need careful handling.`,
         };
       }
       return {
         action_type: 'recovery_message',
         rule_matched: 'RULE_05_DECLINED_MESSAGE',
         rule_inputs: ruleInputs,
-        decision_reason: `Card declined for ${amountBand} amount. Sending recovery message with payment link — customer may need to use a different card.`,
+        decision_reason: `Card declined for ${amountBand} amount. Sending recovery message with payment link: customer may need to use a different card.`,
       };
 
     // ── AUTHENTICATION FAILED (3DS) ──
@@ -209,7 +219,7 @@ export function makeDecision(input: DecisionInput): DecisionResult {
           action_type: 'payment_link',
           rule_matched: 'RULE_06_AUTH_LINK',
           rule_inputs: ruleInputs,
-          decision_reason: `3DS authentication failed. Sending fresh payment link for a new checkout attempt — the customer may have accidentally cancelled or the OTP expired.`,
+          decision_reason: `3DS authentication failed. Sending fresh payment link for a new checkout attempt: customer may have accidentally cancelled or the OTP expired.`,
         };
       }
       return {
@@ -235,7 +245,7 @@ export function makeDecision(input: DecisionInput): DecisionResult {
         action_type: 'stop',
         rule_matched: 'RULE_00_HARD_DECLINE',
         rule_inputs: ruleInputs,
-        decision_reason: `Mandate revoked by customer. Cannot retry — escalating to human queue.`,
+        decision_reason: `Mandate revoked by customer. Cannot retry: escalating to human queue.`,
       };
 
     // ── DEFAULT: Unknown root cause ──

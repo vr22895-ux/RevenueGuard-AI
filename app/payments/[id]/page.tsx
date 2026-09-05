@@ -24,10 +24,10 @@ export default function PaymentDetailPage({ params }: { params: Promise<{ id: st
   }
 
   if (!data?.transaction) {
-    return <div className="page-container"><div className="card"><div className="empty-state">❌ Transaction not found.</div></div></div>;
+    return <div className="page-container"><div className="card"><div className="empty-state">Transaction not found.</div></div></div>;
   }
 
-  const { transaction, classifications, decisions, actions, escalations, auditLogs } = data;
+  const { transaction, classifications, decisions, actions, escalations } = data;
 
   const formatAmount = (paise: number) => '₹' + (paise / 100).toLocaleString('en-IN', { minimumFractionDigits: 2 });
   
@@ -39,6 +39,8 @@ export default function PaymentDetailPage({ params }: { params: Promise<{ id: st
     };
     return <span className={`badge badge--${colorMap[status] || 'muted'}`}>{status.replace(/_/g, ' ')}</span>;
   };
+
+  const isEscalated = escalations && escalations.length > 0;
 
   return (
     <div className="page-container">
@@ -55,7 +57,9 @@ export default function PaymentDetailPage({ params }: { params: Promise<{ id: st
 
       <div className="grid grid-2 mb-lg">
         <div className="card">
-          <span className="card-title block mb-md">Customer & Payment</span>
+          <div className="card-header mb-md">
+            <span className="card-title">Customer & Payment</span>
+          </div>
           <div className="flex flex-col gap-sm">
             <div className="flex justify-between border-b pb-sm">
               <span className="text-muted">Customer Name</span>
@@ -85,65 +89,107 @@ export default function PaymentDetailPage({ params }: { params: Promise<{ id: st
         </div>
 
         <div className="card">
-          <span className="card-title block mb-md">AI Classification History</span>
-          {classifications.length > 0 ? classifications.map((c: any) => (
-            <div key={c.id} className="mb-sm pb-sm border-b last:border-0 last:mb-0 last:pb-0">
-              <div className="flex justify-between items-center mb-xs">
-                <span className="badge badge--info">{c.root_cause}</span>
-                <span className="text-sm text-muted text-mono">Attempt {c.attempt_number}</span>
+          <div className="card-header mb-md">
+            <span className="card-title">AI Classification History</span>
+          </div>
+          {classifications && classifications.length > 0 ? (
+            classifications.map((c: any) => (
+              <div key={c.id} className="mb-sm pb-sm border-b last:border-0 last:mb-0 last:pb-0">
+                <div className="flex justify-between items-center mb-xs">
+                  <span className="badge badge--info">{c.root_cause}</span>
+                  <span className="text-sm text-muted text-mono">Attempt {c.attempt_number}</span>
+                </div>
+                <p className="text-sm text-muted mb-xs">Confidence: {(c.confidence * 100).toFixed(1)}%</p>
+                <p className="text-sm italic" style={{ borderLeft: '3px solid var(--color-info)', paddingLeft: '8px' }}>
+                  {c.reasoning}
+                </p>
               </div>
-              <p className="text-sm text-muted mb-xs">Confidence: {(c.confidence * 100).toFixed(1)}%</p>
-              <p className="text-sm italic" style={{ borderLeft: '3px solid var(--color-primary)', paddingLeft: '8px' }}>
-                {c.reasoning}
-              </p>
+            ))
+          ) : isEscalated ? (
+            <div className="p-sm text-sm text-muted rounded" style={{ background: 'var(--bg-tertiary)', border: '1px solid var(--border-subtle)' }}>
+              Skipped: Stopping rule (Hard Decline) triggered at Step 1 before AI classification.
             </div>
-          )) : <span className="text-sm text-muted">No classifications yet.</span>}
+          ) : (
+            <div className="p-sm text-sm text-muted rounded" style={{ background: 'var(--bg-tertiary)' }}>
+              No classifications yet.
+            </div>
+          )}
         </div>
       </div>
 
       <div className="grid grid-2 mb-lg">
         <div className="card">
-          <span className="card-title block mb-md">Rule Engine Decisions</span>
-          {decisions.length > 0 ? decisions.map((d: any) => (
-            <div key={d.id} className="mb-sm pb-sm border-b last:border-0 last:mb-0 last:pb-0">
-              <div className="flex justify-between items-center mb-xs">
-                <span className="badge badge--warning">{d.action_type}</span>
-                <span className="text-sm text-muted text-mono">Attempt {d.attempt_number}</span>
+          <div className="card-header mb-md">
+            <span className="card-title">Rule Engine Decisions</span>
+          </div>
+          {decisions && decisions.length > 0 ? (
+            decisions.map((d: any) => (
+              <div key={d.id} className="mb-sm pb-sm border-b last:border-0 last:mb-0 last:pb-0">
+                <div className="flex justify-between items-center mb-xs">
+                  <span className="badge badge--warning">{d.action_type}</span>
+                  <span className="text-sm text-muted text-mono">Attempt {d.attempt_number}</span>
+                </div>
+                <p className="text-sm text-muted mb-xs">Rule: {d.rule_matched}</p>
+                <p className="text-sm">{d.decision_reason}</p>
               </div>
-              <p className="text-sm text-muted mb-xs">Rule: {d.rule_matched}</p>
-              <p className="text-sm">{d.decision_reason}</p>
+            ))
+          ) : isEscalated ? (
+            <div className="p-sm text-sm text-muted rounded" style={{ background: 'var(--bg-tertiary)', border: '1px solid var(--border-subtle)' }}>
+              Skipped: Escalated directly to human queue via stopping rule.
             </div>
-          )) : <span className="text-sm text-muted">No decisions yet.</span>}
+          ) : (
+            <div className="p-sm text-sm text-muted rounded" style={{ background: 'var(--bg-tertiary)' }}>
+              No decisions yet.
+            </div>
+          )}
         </div>
 
         <div className="card">
-          <span className="card-title block mb-md">Executed Actions</span>
-          {actions.length > 0 ? actions.map((a: any) => (
-            <div key={a.id} className="mb-sm pb-sm border-b last:border-0 last:mb-0 last:pb-0">
-              <div className="flex justify-between items-center mb-xs">
-                <span className="badge badge--primary">{a.action_type}</span>
-                <span className={`badge badge--${a.status === 'success' ? 'success' : a.status === 'failed' ? 'danger' : 'muted'}`}>
-                  {a.status}
-                </span>
-              </div>
-              {a.action_details?.payment_link_url && (
-                <a href={a.action_details.payment_link_url} target="_blank" rel="noreferrer" className="text-sm text-primary block mb-xs">
-                  🔗 Payment Link Created
-                </a>
-              )}
-              {a.ai_message && (
-                <div className="mt-xs p-sm text-sm bg-muted rounded" style={{ whiteSpace: 'pre-wrap' }}>
-                  <strong>AI Drafted SMS/Email:</strong><br /><br />{a.ai_message}
+          <div className="card-header mb-md">
+            <span className="card-title">Executed Actions</span>
+          </div>
+          {actions && actions.length > 0 ? (
+            actions.map((a: any) => (
+              <div key={a.id} className="mb-sm pb-sm border-b last:border-0 last:mb-0 last:pb-0">
+                <div className="flex justify-between items-center mb-xs">
+                  <span className="badge badge--primary">{a.action_type}</span>
+                  <span className={`badge badge--${a.status === 'success' ? 'success' : a.status === 'failed' ? 'danger' : 'muted'}`}>
+                    {a.status}
+                  </span>
                 </div>
-              )}
+                {a.action_details?.payment_link_url && (
+                  <a href={a.action_details.payment_link_url} target="_blank" rel="noreferrer" className="text-sm text-primary block mb-xs">
+                    Payment Link Created →
+                  </a>
+                )}
+                {a.ai_message && (
+                  <div className="mt-xs p-sm text-sm rounded" style={{ whiteSpace: 'pre-wrap', background: a.status === 'failed' ? 'var(--bg-tertiary)' : 'var(--bg-muted)', opacity: a.status === 'failed' ? 0.7 : 1 }}>
+                    <strong className={a.status === 'failed' ? 'text-danger' : ''}>
+                      {a.status === 'failed' ? 'AI Drafted SMS/Email (NOT SENT DUE TO FAILURE):' : 'AI Drafted SMS/Email:'}
+                    </strong>
+                    <br /><br />
+                    {a.ai_message}
+                  </div>
+                )}
+              </div>
+            ))
+          ) : isEscalated ? (
+            <div className="p-sm text-sm text-muted rounded" style={{ background: 'var(--bg-tertiary)', border: '1px solid var(--border-subtle)' }}>
+              No automated actions executed (escalated for manual human review).
             </div>
-          )) : <span className="text-sm text-muted">No actions yet.</span>}
+          ) : (
+            <div className="p-sm text-sm text-muted rounded" style={{ background: 'var(--bg-tertiary)' }}>
+              No actions yet.
+            </div>
+          )}
         </div>
       </div>
 
-      {escalations.length > 0 && (
+      {isEscalated && (
         <div className="card mb-lg" style={{ borderLeft: '3px solid var(--color-danger)' }}>
-          <span className="card-title block mb-md text-danger">🚨 Escalation Notice</span>
+          <div className="card-header mb-md">
+            <span className="card-title text-danger">Escalation Notice</span>
+          </div>
           {escalations.map((e: any) => (
             <div key={e.id} className="mb-md last:mb-0">
               <div className="flex gap-sm mb-xs">

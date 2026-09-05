@@ -248,6 +248,10 @@ async function processPayment(
   let razorpayRef: string | null = null;
   let razorpayResponse: Record<string, unknown> | null = null;
   let actionStatus = 'executed';
+  let isActionFailed = false;
+  let actionFailureReason = '';
+
+  const requiresLink = ['payment_link', 'recovery_message'].includes(decision.action_type);
 
   // Draft AI message if needed
   if (['recovery_message', 'payment_link', 'promise_to_pay'].includes(decision.action_type)) {
@@ -259,15 +263,16 @@ async function processPayment(
         attempt_number: transaction.attempt_count + 1,
         method: transaction.method,
         is_recurring: transaction.is_recurring,
+        has_payment_link: requiresLink,
       });
     } catch (err) {
       console.error(`[Agent] Message drafting failed:`, err);
-      aiMessage = `Dear ${transaction.customer_name}, your payment of ₹${(transaction.amount / 100).toFixed(2)} could not be processed. Please use the payment link below to complete your payment.`;
+      aiMessage = `Dear ${transaction.customer_name}, your payment of ₹${(transaction.amount / 100).toFixed(2)} could not be processed. Please complete your payment at [Payment Link].`;
     }
   }
 
   // Create payment link if needed
-  if (['payment_link', 'recovery_message'].includes(decision.action_type)) {
+  if (requiresLink) {
     try {
       const linkResult = await createPaymentLink({
         amount: transaction.amount,
@@ -288,13 +293,39 @@ async function processPayment(
         };
       } else {
         actionDetails = { ...actionDetails, payment_link_error: linkResult.error };
+        isActionFailed = true;
+        actionFailureReason = linkResult.error || 'Payment link creation failed';
       }
     } catch (err) {
       console.error(`[Agent] Payment link creation failed:`, err);
+      const errMsg = err instanceof Error ? err.message : 'unknown';
       actionDetails = {
         ...actionDetails,
-        payment_link_error: err instanceof Error ? err.message : 'unknown',
+        payment_link_error: errMsg,
       };
+      isActionFailed = true;
+      actionFailureReason = errMsg;
+    }
+  }
+
+  // Inject actual payment link URL into AI drafted message body or strip placeholders if no link exists
+  if (aiMessage) {
+    const linkUrl = actionDetails.payment_link_url as string | undefined;
+    const linkRegex = /\[(?:Payment Link|Link|Insert Payment Link Here|Link:.*?)\]/gi;
+
+    if (linkUrl) {
+      if (linkRegex.test(aiMessage)) {
+        aiMessage = aiMessage.replace(linkRegex, linkUrl);
+      } else if (!aiMessage.includes(linkUrl)) {
+        aiMessage += `\n\nPayment Link: ${linkUrl}`;
+      }
+    } else {
+      // No payment link created for this action type (e.g. promise_to_pay) — strip leftover link placeholders
+      aiMessage = aiMessage
+        .replace(linkRegex, '')
+        .replace(/please use the payment link below to .*?:/gi, 'please confirm your payment details:')
+        .replace(/click the payment link below to .*?:/gi, 'please confirm your payment details:')
+        .trim();
     }
   }
 
@@ -327,6 +358,41 @@ async function processPayment(
       short_url: actionDetails.payment_link_url,
       payment_link_id: razorpayRef,
     });
+  }
+
+  // Handle action failure gracefully before simulation
+  if (isActionFailed) {
+    actionStatus = 'failed';
+    await supabase
+      .from('actions')
+      .update({ status: 'failed', executed_at: new Date().toISOString(), action_details: actionDetails })
+      .eq('id', actionId);
+
+    await logActionExecuted(transaction.id, actionId, {
+      action_type: decision.action_type,
+      status: 'failed',
+      outcome: `Action failed: ${actionFailureReason}`,
+    });
+
+    await logEscalated(transaction.id, {
+      reason: `Action execution failed: ${actionFailureReason}`,
+      rule: 'SYSTEM_ERROR',
+      action_id: actionId,
+    });
+
+    await supabase.from('escalations').insert({
+      transaction_id: transaction.id,
+      reason: 'system_error',
+      details: `Action execution failed: ${actionFailureReason}`,
+      status: 'pending',
+    });
+
+    await supabase
+      .from('transactions')
+      .update({ status: 'escalated', attempt_count: transaction.attempt_count + 1 })
+      .eq('id', transaction.id);
+
+    return { recovered: false, escalated: true, action_type: decision.action_type };
   }
 
   // ── Simulate payment outcome ──
@@ -366,16 +432,16 @@ async function processPayment(
     return { recovered: true, escalated: false, action_type: decision.action_type };
   }
 
-  // Not recovered — update attempt count
-  actionStatus = 'failed';
+  // Action executed cleanly (message sent / payment link created)
+  actionStatus = 'success';
   await supabase
     .from('actions')
-    .update({ status: 'failed', executed_at: new Date().toISOString() })
+    .update({ status: 'success', executed_at: new Date().toISOString() })
     .eq('id', actionId);
 
   await logActionExecuted(transaction.id, actionId, {
     action_type: decision.action_type,
-    status: 'failed',
+    status: 'success',
     outcome: outcome.reason,
   });
 
@@ -470,51 +536,37 @@ export async function runBatch(batchId?: string): Promise<BatchResult> {
     .update({ status: 'running', started_at: new Date().toISOString() })
     .eq('id', targetBatchId);
 
-  // Fetch all unprocessed + recovering transactions in this batch
-  const { data: transactions, error } = await supabase
+  // Fetch ALL transactions in this batch to get accurate total records & total at risk
+  const { data: allTransactions, error: fetchError } = await supabase
     .from('transactions')
     .select('*')
     .eq('batch_id', targetBatchId)
-    .in('status', ['unprocessed', 'recovering'])
     .order('created_at', { ascending: true });
 
-  if (error) throw new Error(`Failed to fetch transactions: ${error.message}`);
-  if (!transactions || transactions.length === 0) {
-    throw new Error('No unprocessed transactions found in this batch.');
+  if (fetchError) throw new Error(`Failed to fetch transactions: ${fetchError.message}`);
+  if (!allTransactions || allTransactions.length === 0) {
+    throw new Error('No transactions found in this batch.');
   }
 
-  // Counters
-  let processed = 0;
-  let recoveredCount = 0;
-  let recoveredAmount = 0;
-  let failedCount = 0;
-  let escalatedCount = 0;
-  let stoppedCount = 0;
+  // Filter transactions that need processing in this run (unprocessed or recovering)
+  const transactionsToProcess = allTransactions.filter((tx) =>
+    ['unprocessed', 'recovering'].includes(tx.status)
+  );
+
+  if (transactionsToProcess.length === 0) {
+    throw new Error('All transactions in this batch are already fully processed.');
+  }
+
+  // Action counters for this run
   let autoRetryCount = 0;
   let messageCount = 0;
   let promiseCount = 0;
   let paymentLinkCount = 0;
-  let totalAtRisk = 0;
-
-  // Calculate total at risk
-  for (const tx of transactions) {
-    totalAtRisk += tx.amount;
-  }
 
   // Process each payment (sequentially to avoid rate limits)
-  for (const tx of transactions) {
+  for (const tx of transactionsToProcess) {
     try {
       const result = await processPayment(tx as Transaction);
-      processed++;
-
-      if (result.recovered) {
-        recoveredCount++;
-        recoveredAmount += tx.amount;
-      } else if (result.escalated) {
-        escalatedCount++;
-      } else {
-        failedCount++;
-      }
 
       // Track action types
       switch (result.action_type) {
@@ -531,44 +583,67 @@ export async function runBatch(batchId?: string): Promise<BatchResult> {
           paymentLinkCount++;
           break;
       }
-
-      // Update batch progress every 10 records
-      if (processed % 10 === 0) {
-        await supabase
-          .from('batch_runs')
-          .update({
-            processed,
-            recovered_count: recoveredCount,
-            recovered_amount: recoveredAmount,
-            failed_count: failedCount,
-            escalated_count: escalatedCount,
-            stopped_count: stoppedCount,
-            recovery_rate: processed > 0 ? recoveredCount / processed : 0,
-          })
-          .eq('id', targetBatchId);
-      }
     } catch (err) {
       console.error(`[Agent] Error processing ${tx.id}:`, err);
-      failedCount++;
-      processed++;
     }
-    
+
     // Sleep for 2 seconds to avoid hitting Gemini free tier rate limits (15 RPM)
-    await new Promise(resolve => setTimeout(resolve, 2000));
+    await new Promise((resolve) => setTimeout(resolve, 2000));
   }
 
-  // Final batch update
-  const recoveryRate = processed > 0 ? recoveredCount / processed : 0;
+  // Calculate CUMULATIVE stats across ALL transactions in the batch
+  const { data: updatedTxData } = await supabase
+    .from('transactions')
+    .select(`
+      id,
+      amount,
+      status,
+      actions ( action_type )
+    `)
+    .eq('batch_id', targetBatchId);
 
+  const txList = updatedTxData || [];
+  const totalRecords = txList.length;
+  const cumulativeProcessed = txList.filter((t: any) => t.status !== 'unprocessed').length;
+  const cumulativeRecovered = txList.filter((t: any) => t.status === 'recovered').length;
+  const cumulativeRecoveredAmount = txList
+    .filter((t: any) => t.status === 'recovered')
+    .reduce((sum: number, t: any) => sum + t.amount, 0);
+  const cumulativeEscalated = txList.filter((t: any) => t.status === 'escalated').length;
+  const cumulativeFailed = txList.filter((t: any) => t.status === 'failed').length;
+  const cumulativeTotalAtRisk = txList.reduce((sum: number, t: any) => sum + t.amount, 0);
+
+  // Recovery rate is cumulative recovered / total records
+  const recoveryRate = totalRecords > 0 ? cumulativeRecovered / totalRecords : 0;
+
+  // Reset counters for accurate cumulative recounting
+  autoRetryCount = 0;
+  messageCount = 0;
+  promiseCount = 0;
+  paymentLinkCount = 0;
+
+  // Action type breakdown across batch
+  txList.forEach((t: any) => {
+    if (t.actions) {
+      t.actions.forEach((a: any) => {
+        if (a.action_type === 'auto_retry') autoRetryCount++;
+        if (a.action_type === 'recovery_message') messageCount++;
+        if (a.action_type === 'promise_to_pay') promiseCount++;
+        if (a.action_type === 'payment_link') paymentLinkCount++;
+      });
+    }
+  });
+
+  // Final batch update with true cumulative metrics
   await supabase
     .from('batch_runs')
     .update({
-      processed,
-      recovered_count: recoveredCount,
-      recovered_amount: recoveredAmount,
-      failed_count: failedCount,
-      escalated_count: escalatedCount,
-      stopped_count: stoppedCount,
+      total_records: totalRecords,
+      processed: cumulativeProcessed,
+      recovered_count: cumulativeRecovered,
+      recovered_amount: cumulativeRecoveredAmount,
+      failed_count: cumulativeFailed,
+      escalated_count: cumulativeEscalated,
       recovery_rate: recoveryRate,
       status: 'completed',
       completed_at: new Date().toISOString(),
@@ -577,15 +652,15 @@ export async function runBatch(batchId?: string): Promise<BatchResult> {
 
   return {
     batch_id: targetBatchId!,
-    total_records: transactions.length,
-    processed,
-    recovered_count: recoveredCount,
-    recovered_amount: recoveredAmount,
-    failed_count: failedCount,
-    escalated_count: escalatedCount,
-    stopped_count: stoppedCount,
+    total_records: totalRecords,
+    processed: cumulativeProcessed,
+    recovered_count: cumulativeRecovered,
+    recovered_amount: cumulativeRecoveredAmount,
+    failed_count: cumulativeFailed,
+    escalated_count: cumulativeEscalated,
+    stopped_count: 0,
     recovery_rate: recoveryRate,
-    total_at_risk: totalAtRisk,
+    total_at_risk: cumulativeTotalAtRisk,
     auto_retry_count: autoRetryCount,
     message_count: messageCount,
     promise_count: promiseCount,
